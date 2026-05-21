@@ -45,7 +45,7 @@ Claude Code is an AI assistant you talk to in plain English. You'll use it to se
 
 ## Step 2 — Download these scripts
 
-1. Go to the GitHub page for this project (your friend will have sent you a link)
+1. Go to **[github.com/erinly112/kids-sports-sync](https://github.com/erinly112/kids-sports-sync)**
 2. Click the green **Code** button → **Download ZIP**
 3. Unzip the folder somewhere easy to find, like your Desktop or Documents
 4. Rename the folder to `kids-sports-sync` if it isn't already
