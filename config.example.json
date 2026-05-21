@@ -1,0 +1,67 @@
+{
+  "_instructions": "Copy this file to config.json and fill in your values. Then run: python3 setup.py",
+
+  "family": {
+    "last_name": "Smith",
+    "notify_email": "you@example.com",
+    "respect_manual_yes": false,
+    "timezone": "America/New_York"
+  },
+
+  "kids": [
+    {"name": "Emma",  "color": "#4A90D9"},
+    {"name": "Liam",  "color": "#7B5EA7"}
+  ],
+
+  "target_calendar": "Kid Activities (Smith)",
+
+  "home_address": "123 Main St, Your Town, MA",
+
+  "driver_calendar": "Your Name Here",
+
+  "teams": [
+    {
+      "_comment": "A TeamSnap team. Find teamsnap_team_id in the URL when viewing your team at app.teamsnap.com",
+      "calendar_name": "Falcons U10",
+      "emoji": "⚽",
+      "kids": ["Emma", "Liam"],
+      "rsvp_platform": "teamsnap",
+      "teamsnap_team_id": 12345678,
+      "driving": true,
+      "adjust_duration": true
+    },
+    {
+      "_comment": "Set driving:false when another parent always drives (e.g. head coach)",
+      "calendar_name": "Tigers U8",
+      "emoji": "⚽",
+      "kids": ["Liam"],
+      "rsvp_platform": "teamsnap",
+      "teamsnap_team_id": 87654321,
+      "driving": false,
+      "adjust_duration": true
+    },
+    {
+      "_comment": "A PlayMetrics/SportsEngine/SportNgin team. Run setup.py to find your team_id and persona_id.",
+      "calendar_name": "Metro North Soccer",
+      "emoji": "⚽",
+      "kids": ["Emma"],
+      "rsvp_platform": "sportngin",
+      "sportngin_team_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "sportngin_persona_id": 123456789,
+      "driving": true,
+      "adjust_duration": false
+    },
+    {
+      "_comment": "Optional: override event duration. game_duration_minutes and practice_duration_minutes are both optional.",
+      "calendar_name": "Lacrosse U10",
+      "emoji": "🥍",
+      "kids": ["Emma"],
+      "rsvp_platform": "sportngin",
+      "sportngin_team_id": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy",
+      "sportngin_persona_id": 987654321,
+      "driving": true,
+      "adjust_duration": true,
+      "game_duration_minutes": 60
+    }
+  ]
+}

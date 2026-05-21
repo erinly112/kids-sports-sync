@@ -1,0 +1,19 @@
+# Your personal config — never commit this (it has your family's info)
+config.json
+
+# Generated and log files
+*.log
+calendar.md
+inbox.md
+__pycache__/
+*.pyc
+.DS_Store
+
+# Credential and token files (stay in ~/.config/, not the repo)
+*credentials*.json
+*token*.json
+*-ids.json
+*-synced.json
+geocode-cache.json
+bays-fields.json
+rsvp-cal-snapshot.json
