@@ -29,6 +29,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 import sportsync_config
+import telemetry
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -176,11 +177,16 @@ def save_snapshot(cal_by_src):
     )
 
 def compute_cal_diff(prev, curr):
-    """Return {cal_source: {'added': [dates], 'removed': [dates]}}."""
+    """Return {cal_source: {'added': [dates], 'removed': [dates]}}.
+    Past events dropping out of the query window are not reported as removed."""
+    today = datetime.date.today().strftime("%Y-%m-%d")
     diff = {}
     for src in set(prev) | set(curr):
         added   = sorted(curr.get(src, set()) - prev.get(src, set()))
-        removed = sorted(prev.get(src, set()) - curr.get(src, set()))
+        removed = sorted(
+            d for d in prev.get(src, set()) - curr.get(src, set())
+            if d >= today  # only report future events as removed
+        )
         if added or removed:
             diff[src] = {"added": added, "removed": removed}
     return diff
@@ -193,7 +199,7 @@ def fmt_date(d):
     except ValueError:
         return d
 
-def build_html(changes, all_rsvps, cal_diff, skipped, applied, is_first_run=False):
+def build_html(changes, all_rsvps, cal_diff, skipped, applied, is_first_run=False, ts_dates=None):
     today = datetime.date.today().strftime("%A, %B %-d, %Y")
     dry   = "" if applied else " &nbsp;<span style='color:#aaa;font-size:12px;font-weight:400'>(dry run)</span>"
 
@@ -298,7 +304,14 @@ def build_html(changes, all_rsvps, cal_diff, skipped, applied, is_first_run=Fals
             for d in diff.get("added", []):
                 p(f'<tr><td style="padding:4px 0;width:24px;font-size:14px">➕</td><td style="padding:4px 8px;font-size:13px;color:#2e7d32">{fmt_date(d)} added to calendar</td></tr>')
             for d in diff.get("removed", []):
-                p(f'<tr><td style="padding:4px 0;width:24px;font-size:14px">➖</td><td style="padding:4px 8px;font-size:13px;color:#c62828">{fmt_date(d)} removed from calendar</td></tr>')
+                if ts_dates and cal_source in ts_dates:
+                    if d in ts_dates[cal_source]:
+                        reason = ' <span style="color:#888;font-size:11px">(you removed manually)</span>'
+                    else:
+                        reason = ' <span style="color:#888;font-size:11px">(team cancelled/removed)</span>'
+                else:
+                    reason = ""
+                p(f'<tr><td style="padding:4px 0;width:24px;font-size:14px">➖</td><td style="padding:4px 8px;font-size:13px;color:#c62828">{fmt_date(d)} removed from calendar{reason}</td></tr>')
         p('</table>')
     p('</div>')
 
@@ -321,6 +334,12 @@ def build_html(changes, all_rsvps, cal_diff, skipped, applied, is_first_run=Fals
 </tr>""")
         p('</table>')
         p('</div>')
+
+    # ── Footer: opt-out ─────────────────────────────────────────────────────────
+    p('<div style="margin-top:28px;padding-top:14px;border-top:1px solid #eee;text-align:center;font-size:11px;color:#bbb">'
+      'To stop these emails, open Claude Code in your kids-sports-sync folder and say: '
+      '<em>turn off the daily email</em> — or set <code style="font-size:11px">"email_enabled": false</code> in config.json'
+      '</div>')
 
     p('\n</div>\n</div>\n</body></html>')
     return "\n".join(parts)
@@ -353,9 +372,10 @@ def main():
     # changes:   {cal_source: [(kid_name, date_label, ev_name, going)]}
     # all_rsvps: {cal_source: [(kid_name, date_label, ev_name, going)]}  — full picture
     # skipped:   {cal_source: [(kid_name, date_label, ev_name)]}  — no av record found
-    changes   = {}
-    all_rsvps = {}
-    skipped   = {}
+    changes          = {}
+    all_rsvps        = {}
+    skipped          = {}
+    ts_dates_by_source = {}  # cal_source → set of YYYY-MM-DD dates still on TeamSnap
 
     for team_id, cal_source in TEAM_CALENDAR_MAP.items():
         members_data = ts_get(token, f"{API_BASE}/members/search?team_id={team_id}")
@@ -385,6 +405,7 @@ def main():
             e for e in events
             if (e.get("start_date") or "")[:10] >= now.strftime("%Y-%m-%d")
         ]
+        ts_dates_by_source[cal_source] = {(e.get("start_date") or "")[:10] for e in future_events}
 
         if args.debug:
             print(f"[debug]   → {len(future_events)} future events, "
@@ -450,7 +471,15 @@ def main():
                     (kid_name, date_label, ev_name, going)
                 )
 
-    print(build_html(changes, all_rsvps, cal_diff, skipped, args.apply, is_first_run))
+    if _cfg.get("email_enabled", True):
+        print(build_html(changes, all_rsvps, cal_diff, skipped, args.apply, is_first_run, ts_dates=ts_dates_by_source))
+
+    if args.apply:
+        telemetry.ping(CONFIG_DIR, _cfg, "teamsnap-rsvp", {
+            "rsvps_set":    sum(len(v) for v in changes.values()),
+            "cal_changes":  sum(len(v.get("added", [])) + len(v.get("removed", []))
+                                for v in cal_diff.values()),
+        })
 
 
 if __name__ == "__main__":

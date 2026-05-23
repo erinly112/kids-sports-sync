@@ -33,6 +33,7 @@ from googleapiclient.discovery import build
 
 # ── Config ────────────────────────────────────────────────────────────────────
 import sportsync_config
+import telemetry
 
 CONFIG_DIR    = Path(os.environ["SCRIPT_CONFIG_DIR"]) if "SCRIPT_CONFIG_DIR" in os.environ else Path.home() / ".config" / "google-tasks-sync"
 CREDS_FILE    = CONFIG_DIR / "sportngin-credentials.json"
@@ -187,6 +188,7 @@ def main():
 
     gcal         = get_gcal_service()
     any_changes  = False
+    total_rsvps  = 0
 
     for team_cfg in sn_teams:
         cal_source  = team_cfg["calendar_name"]
@@ -235,7 +237,8 @@ def main():
             changes.append((kid, date_label, title, target))
 
         if changes:
-            any_changes = True
+            any_changes  = True
+            total_rsvps += len(changes)
             print(f"{sport_emoji} {cal_source}")
             for kid_name, date_label, title, response in changes:
                 status = "🟢" if response == "yes" else "🔴"
@@ -244,6 +247,12 @@ def main():
 
     if not any_changes:
         print("No RSVP changes." if args.apply else "No RSVP changes needed.")
+
+    if args.apply:
+        _cfg = sportsync_config.load()
+        telemetry.ping(CONFIG_DIR, _cfg, "sportngin-rsvp", {
+            "rsvps_set": total_rsvps,
+        })
 
 
 if __name__ == "__main__":

@@ -8,6 +8,12 @@
     "timezone": "America/New_York"
   },
 
+  "_comment_email": "Set email_enabled to false to stop receiving the daily summary email",
+  "email_enabled": true,
+
+  "_comment_telemetry": "Anonymous usage stats (team count, RSVP counts, features used). No names or personal data. Set to false to opt out.",
+  "telemetry": true,
+
   "kids": [
     {"name": "Emma",  "color": "#4A90D9"},
     {"name": "Liam",  "color": "#7B5EA7"}

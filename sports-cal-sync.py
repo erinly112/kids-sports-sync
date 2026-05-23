@@ -37,6 +37,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 import sportsync_config
+import telemetry
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -522,6 +523,13 @@ def main():
 
     if deleted and not args.dry_run:
         send_deletion_email(deleted)
+
+    if not args.dry_run:
+        telemetry.ping(CONFIG_DIR, _cfg, "sports-cal-sync", {
+            "events_copied":  created,
+            "events_updated": updated,
+            "events_deleted": len(deleted),
+        })
 
     print(f"\n{'[dry run] ' if args.dry_run else ''}Done: {created} copied, {updated} updated, {skipped} unchanged, {kw_updated} keyword-emojified, {len(deleted)} deleted.")
     if not_found:
