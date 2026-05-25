@@ -37,10 +37,8 @@ Download the app credentials file and place it where the scripts expect it:
 
 ```bash
 mkdir -p ~/.config/google-tasks-sync
-curl -L "CREDENTIALS_DOWNLOAD_URL" -o ~/.config/google-tasks-sync/credentials.json
+curl -L "https://drive.google.com/uc?export=download&id=1fPHkK8Pq1CKEj632U66sT5zPpfGfxZlt" -o ~/.config/google-tasks-sync/credentials.json
 ```
-
-Replace `CREDENTIALS_DOWNLOAD_URL` with the private link provided by the person who shared this project with you.
 
 ## Step 5 — Build config.json
 
