@@ -38,7 +38,9 @@ _cfg = sportsync_config.load()
 CONFIG_DIR    = Path(os.environ["SCRIPT_CONFIG_DIR"]) if "SCRIPT_CONFIG_DIR" in os.environ else Path.home() / ".config" / "google-tasks-sync"
 CREDS_FILE    = CONFIG_DIR / "teamsnap-credentials.json"
 TOKEN_FILE    = CONFIG_DIR / "teamsnap-token.json"
-SNAPSHOT_FILE = CONFIG_DIR / "rsvp-cal-snapshot.json"
+SNAPSHOT_FILE     = CONFIG_DIR / "rsvp-cal-snapshot.json"
+RSVP_LOG_FILE     = CONFIG_DIR / "rsvp-changes.log"
+SEASON_NUDGE_FILE = CONFIG_DIR / "season-nudge-sent.json"
 
 API_BASE     = "https://api.teamsnap.com/v3"
 AUTH_URL     = "https://auth.teamsnap.com/oauth/authorize"
@@ -191,6 +193,120 @@ def compute_cal_diff(prev, curr):
             diff[src] = {"added": added, "removed": removed}
     return diff
 
+# ── Season nudge ─────────────────────────────────────────────────────────────
+
+# (month, start_day, end_day, season_label)
+SEASON_NUDGE_WINDOWS = [
+    (9,  1,  7,  "Fall Season",         "fall"),
+    (10, 11, 17, "Late Fall / Winter",   "late-fall"),
+    (3,  24, 31, "Spring Season",        "spring"),
+]
+
+def _nudge_key(today: datetime.date) -> str | None:
+    """Return a unique key like '2025-fall' if today is in a nudge window, else None."""
+    for month, start, end, _label, slug in SEASON_NUDGE_WINDOWS:
+        if today.month == month and start <= today.day <= end:
+            return f"{today.year}-{slug}"
+    return None
+
+def _nudge_already_sent(key: str) -> bool:
+    if not SEASON_NUDGE_FILE.exists():
+        return False
+    sent = json.loads(SEASON_NUDGE_FILE.read_text())
+    return key in sent
+
+def _mark_nudge_sent(key: str):
+    sent = json.loads(SEASON_NUDGE_FILE.read_text()) if SEASON_NUDGE_FILE.exists() else {}
+    sent[key] = datetime.date.today().isoformat()
+    SEASON_NUDGE_FILE.write_text(json.dumps(sent, indent=2))
+
+def _season_label_for_key(key: str) -> str:
+    slug = key.split("-", 1)[1]
+    for _m, _s, _e, label, s in SEASON_NUDGE_WINDOWS:
+        if s == slug:
+            return label
+    return "New Season"
+
+def build_season_nudge_html(season_label: str) -> str:
+    kids      = KIDS_FIRST_NAMES
+    kid_list  = ", ".join(kids) if kids else "your kids"
+    teams     = [t["calendar_name"] for t in _cfg["teams"]]
+    team_list = "".join(f"<li>{t}</li>" for t in teams)
+    today_str = datetime.date.today().strftime("%B %-d, %Y")
+
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  body {{ margin:0; padding:20px; background:#f0f2f5;
+         font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif }}
+  .card {{ background:#fff; border-radius:12px; padding:28px 32px; max-width:600px;
+           margin:0 auto; box-shadow:0 2px 8px rgba(0,0,0,.07) }}
+  h2 {{ color:#16213e; font-size:20px; margin:0 0 6px }}
+  .sub {{ color:#888; font-size:13px; margin-bottom:20px }}
+  p {{ color:#333; font-size:14px; line-height:1.6; margin:0 0 14px }}
+  ul {{ color:#333; font-size:14px; line-height:1.8; padding-left:20px; margin:0 0 14px }}
+  .checklist {{ background:#f8f9fb; border-radius:8px; padding:16px 20px; margin:18px 0 }}
+  .checklist li {{ margin-bottom:6px }}
+  .footer {{ margin-top:24px; padding-top:14px; border-top:1px solid #eee;
+             text-align:center; font-size:11px; color:#bbb }}
+</style></head>
+<body><div class="card">
+  <h2>🏅 {season_label} is Starting — Time to Update!</h2>
+  <div class="sub">{today_str}</div>
+
+  <p>Hey! It looks like a new sports season is kicking off. Your kids ({kid_list}) may have
+  new teams, new calendars, or new scheduling rules. The RSVP automations keep running as-is,
+  but any teams that don't have a matching Google Calendar won't get auto-RSVPs.</p>
+
+  <p><strong>Currently configured teams:</strong></p>
+  <ul>{team_list}</ul>
+
+  <p>If anything has changed for {season_label.lower()}, just reply to this email with the
+  following info for each new or updated team:</p>
+
+  <div class="checklist">
+    <ul>
+      <li>📅 <strong>Google Calendar name</strong> — must match exactly (e.g. "Falcons U12 2025")</li>
+      <li>👦 <strong>Which kid(s)</strong> are on this team</li>
+      <li>📱 <strong>Platform</strong> — TeamSnap or PlayMetrics/SportsEngine</li>
+      <li>🔗 <strong>Team ID</strong> — from the URL at app.teamsnap.com/team/XXXXXXXX or PlayMetrics</li>
+      <li>🚗 <strong>Driving?</strong> — yes/no (no = another parent always drives, e.g. head coach)</li>
+      <li>⚠️ <strong>Any special rules</strong> — e.g. "always mark going regardless of calendar",
+          "skip B-team games", custom game duration, etc.</li>
+    </ul>
+  </div>
+
+  <p>I'll update <code>config.json</code> and make sure the new teams are wired up before the
+  first game. No rush — just reply when you have the info!</p>
+
+  <p style="color:#888;font-size:13px">Not the right time? If your seasons start on different
+  weeks than when this email landed, just say so and I'll adjust the nudge windows to match
+  your schedule.</p>
+
+  <div class="footer">Sent by your kids-sports-sync automations &mdash; reply to this email to update your team config</div>
+</div></body></html>"""
+
+def maybe_send_season_nudge():
+    """Send a season-onboarding nudge email if today is in a nudge window and it hasn't been sent yet."""
+    today = datetime.date.today()
+    key   = _nudge_key(today)
+    if not key or _nudge_already_sent(key):
+        return
+    label   = _season_label_for_key(key)
+    subject = f"🏅 {label} is Starting — Update Your Sports Calendars?"
+    html    = build_season_nudge_html(label)
+    try:
+        import sys as _sys
+        _sys.path.insert(0, str(Path.home() / "context/admin/rosie"))
+        import rosie_mailer
+        to_addr = _cfg["family"].get("notify_email", rosie_mailer.ERIN_EMAIL)
+        rosie_mailer.send(subject, html, to=to_addr)
+        _mark_nudge_sent(key)
+        print(f"[season-nudge] Sent '{label}' onboarding email to {to_addr}", file=sys.stderr)
+    except Exception as exc:
+        print(f"[season-nudge] Failed to send nudge: {exc}", file=sys.stderr)
+
+
 # ── HTML email builder ────────────────────────────────────────────────────────
 
 def fmt_date(d):
@@ -260,14 +376,21 @@ def build_html(changes, all_rsvps, cal_diff, skipped, applied, is_first_run=Fals
     p('<div style="margin-bottom:28px">')
     p('<div style="font-size:15px;font-weight:700;color:#16213e;margin-bottom:12px">📋 Current RSVP Status</div>')
 
-    if not all_rsvps:
-        p('<div style="color:#888;font-size:14px">No upcoming events found.</div>')
+    week_cutoff = (datetime.date.today() + datetime.timedelta(days=7)).strftime("%Y-%m-%d")
+    all_rsvps_week = {
+        src: [r for r in rows if (r[4] if len(r) > 4 else "9999") <= week_cutoff]
+        for src, rows in all_rsvps.items()
+    }
+    all_rsvps_week = {src: rows for src, rows in all_rsvps_week.items() if rows}
+
+    if not all_rsvps_week:
+        p('<div style="color:#888;font-size:14px">No upcoming events in the next 7 days.</div>')
     else:
         p('<table style="width:100%;border-collapse:collapse">')
-        for cal_source, rows in sorted(all_rsvps.items()):
+        for cal_source, rows in sorted(all_rsvps_week.items()):
             emoji = TEAM_EMOJI.get(cal_source, "🏅")
             p(f'<tr><td colspan="3" style="padding:10px 0 5px;font-size:13px;font-weight:600;color:#555;border-top:1px solid #eee">{emoji} {cal_source}</td></tr>')
-            for kid_name, date_label, ev_name, going in rows:
+            for kid_name, date_label, ev_name, going, *_ in rows:
                 badge_bg  = "#e8f5e9" if going else "#f5f5f5"
                 badge_fg  = "#2e7d32" if going else "#999"
                 badge_txt = "✓ Going" if going else "– Not going"
@@ -452,13 +575,13 @@ def main():
                 # Respect a manual "yes" set outside this script
                 if RESPECT_MANUAL_YES and target_code == 0 and current_code == 1:
                     all_rsvps.setdefault(cal_source, []).append(
-                        (kid_name, date_label, ev_name, True)  # honour manual going
+                        (kid_name, date_label, ev_name, True, ev_date)  # honour manual going
                     )
                     continue
 
                 # Always record for the full status summary
                 all_rsvps.setdefault(cal_source, []).append(
-                    (kid_name, date_label, ev_name, going)
+                    (kid_name, date_label, ev_name, going, ev_date)
                 )
 
                 if current_code == target_code:
@@ -466,10 +589,17 @@ def main():
 
                 if args.apply:
                     ts_put(token, av["_href"], {"status_code": target_code})
+                    old_label = "going" if current_code == 1 else "not going"
+                    new_label = "going" if target_code  == 1 else "not going"
+                    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    with RSVP_LOG_FILE.open("a") as f:
+                        f.write(f"{ts} | {cal_source} | {kid_name} | {ev_name} | {ev_date} | {old_label} → {new_label}\n")
 
                 changes.setdefault(cal_source, []).append(
                     (kid_name, date_label, ev_name, going)
                 )
+
+    maybe_send_season_nudge()
 
     if _cfg.get("email_enabled", True):
         print(build_html(changes, all_rsvps, cal_diff, skipped, args.apply, is_first_run, ts_dates=ts_dates_by_source))
