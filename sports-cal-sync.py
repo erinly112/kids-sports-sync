@@ -350,18 +350,45 @@ def main():
 
             # Cancelled event — remove from target if already synced, then skip
             if _re.match(r"^\[CANCEL(L?)ED\]", summary, _re.IGNORECASE):
+                removed = False
+                # Case 1: we own a tracked copy — delete by stored target event ID
                 if event_id in synced and synced[event_id] not in ("pre-existing", "skipped-no-location"):
                     target_event_id = synced.pop(event_id)
                     if not args.dry_run:
                         try:
                             service.events().delete(calendarId=target_cal_id, eventId=target_event_id).execute()
+                            target_events[:] = [e for e in target_events if e["id"] != target_event_id]
                             print(f"  🗑 Removed cancelled: {summary} ({start_str}) ← {source_name}")
+                            removed = True
                         except Exception as e:
                             print(f"  ⚠ Could not remove cancelled event {target_event_id}: {e}")
                     else:
                         print(f"  [dry run] would remove cancelled: {summary} ({start_str}) ← {source_name}")
-                else:
-                    print(f"  — Skipped cancelled (not in target): {summary} ({start_str}) ← {source_name}")
+                        removed = True
+                # Case 2: pre-existing or untracked — search target_events by title+time
+                # Strip "[CANCELED]"/[CANCELLED]" prefix (and any emoji) to find the original copy
+                if not removed:
+                    bare = _re.sub(r"^\[CANCEL(L?)ED\]\s*", "", summary, flags=_re.IGNORECASE).strip()
+                    bare_no_emoji = strip_emoji_prefix(bare).strip().lower()
+                    for t in list(target_events):
+                        t_title = strip_emoji_prefix(t.get("summary", "")).strip().lower()
+                        t_start = (t.get("start") or {}).get("dateTime") or (t.get("start") or {}).get("date") or ""
+                        if t_title == bare_no_emoji and t_start[:16] == start_str[:16]:
+                            if not args.dry_run:
+                                try:
+                                    service.events().delete(calendarId=target_cal_id, eventId=t["id"]).execute()
+                                    target_events.remove(t)
+                                    synced.pop(event_id, None)
+                                    print(f"  🗑 Removed cancelled (pre-existing): {t.get('summary')} ({start_str}) ← {source_name}")
+                                    removed = True
+                                except Exception as e:
+                                    print(f"  ⚠ Could not remove pre-existing cancelled event {t['id']}: {e}")
+                            else:
+                                print(f"  [dry run] would remove cancelled (pre-existing): {t.get('summary')} ({start_str}) ← {source_name}")
+                                removed = True
+                            break
+                if not removed:
+                    print(f"  — Skipped cancelled (not found in target): {summary} ({start_str}) ← {source_name}")
                 continue
 
             # Already synced — check if source has changed and update if so
