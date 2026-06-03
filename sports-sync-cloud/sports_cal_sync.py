@@ -20,7 +20,6 @@ import sys
 import datetime
 from pathlib import Path
 
-sys.path.insert(0, str(Path.home() / "context/admin/rosie"))
 import rosie_mailer
 
 _orig_print = builtins.print
