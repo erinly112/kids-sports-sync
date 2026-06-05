@@ -4,6 +4,7 @@ Uses gmail-token.json from SCRIPT_CONFIG_DIR (downloaded from GCS by main.py).
 Mirrors the interface of the local ~/context/admin/rosie/rosie_mailer.py.
 """
 import base64
+import json
 import os
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -13,9 +14,12 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
-ERIN_EMAIL = "erin.shea@gmail.com"
-
 _CONFIG_DIR = Path(os.environ.get("SCRIPT_CONFIG_DIR", "/tmp/script-config"))
+
+
+def _notify_email():
+    cfg = _CONFIG_DIR / "config.json"
+    return json.loads(cfg.read_text())["family"]["notify_email"]
 
 
 def _get_service():
@@ -27,7 +31,9 @@ def _get_service():
     return build("gmail", "v1", credentials=creds, cache_discovery=False)
 
 
-def send(subject: str, html_body: str, to: str = ERIN_EMAIL, text_body: str = ""):
+def send(subject: str, html_body: str, to: str = None, text_body: str = ""):
+    if to is None:
+        to = _notify_email()
     svc = _get_service()
     msg = MIMEMultipart("alternative")
     msg["To"] = to
@@ -40,7 +46,9 @@ def send(subject: str, html_body: str, to: str = ERIN_EMAIL, text_body: str = ""
     print(f"  ✉ sent: {subject}")
 
 
-def send_plain(subject: str, body: str, to: str = ERIN_EMAIL):
+def send_plain(subject: str, body: str, to: str = None):
+    if to is None:
+        to = _notify_email()
     svc = _get_service()
     msg = MIMEText(body)
     msg["To"] = to

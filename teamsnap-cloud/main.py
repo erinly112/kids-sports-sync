@@ -5,10 +5,11 @@ teamsnap-rsvp Cloud Function — runs daily at 7am ET.
 2. Runs teamsnap-rsvp.py --apply (outputs HTML)
 3. Runs sportngin-rsvp.py --apply (outputs plain text)
 4. Uploads changed state back to GCS
-5. Emails combined summary to familynch@gmail.com
+5. Emails combined summary to notify_email from config.json
 """
 
 import base64
+import json
 import os
 import subprocess
 import sys
@@ -24,7 +25,6 @@ from googleapiclient.discovery import build
 
 BUCKET       = "erin-lynch-scripts"
 LOCAL_CONFIG = Path("/tmp/script-config")
-TO_EMAIL     = "familynch@gmail.com"
 
 DOWNLOAD_FILES = [
     "config.json",
@@ -68,7 +68,7 @@ def sync_to_gcs():
             print(f"  ↑ {f}")
 
 
-def send_email(subject, html_body):
+def send_email(subject, html_body, to):
     token_file = LOCAL_CONFIG / "gmail-token.json"
     creds = Credentials.from_authorized_user_file(str(token_file))
     if creds.expired and creds.refresh_token:
@@ -77,12 +77,12 @@ def send_email(subject, html_body):
 
     svc = build("gmail", "v1", credentials=creds, cache_discovery=False)
     msg = MIMEMultipart("alternative")
-    msg["To"]      = TO_EMAIL
+    msg["To"]      = to
     msg["Subject"] = subject
     msg.attach(MIMEText(html_body, "html"))
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
     svc.users().messages().send(userId="me", body={"raw": raw}).execute()
-    print(f"Email sent to {TO_EMAIL}")
+    print(f"Email sent to {to}")
 
 
 def run_script(script, *args):
@@ -101,6 +101,7 @@ def run_script(script, *args):
 def teamsnap_rsvp(request):
     print("=== Downloading config from GCS ===")
     sync_from_gcs()
+    to_email = json.loads((LOCAL_CONFIG / "config.json").read_text())["family"]["notify_email"]
 
     print("\n=== Running teamsnap-rsvp ===")
     ts_output = run_script("teamsnap_rsvp.py", "--apply")
@@ -127,5 +128,5 @@ def teamsnap_rsvp(request):
     else:
         combined = f"<pre style='font-family:sans-serif'>{sn_output}</pre>"
 
-    send_email("Team RSVPs updated", combined)
+    send_email("Team RSVPs updated", combined, to_email)
     return "OK", 200

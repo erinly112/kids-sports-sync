@@ -5,10 +5,11 @@ sports-sync Cloud Function — runs every Sunday at 5pm ET.
 2. Runs driving-plan.py --apply
 3. Runs sports-cal-sync.py
 4. Uploads changed state back to GCS
-5. Emails summary to familynch@gmail.com
+5. Emails summary to notify_email from config.json
 """
 
 import base64
+import json
 import os
 import subprocess
 import sys
@@ -25,7 +26,6 @@ from googleapiclient.discovery import build
 
 BUCKET       = "erin-lynch-scripts"
 LOCAL_CONFIG = Path("/tmp/script-config")
-TO_EMAIL     = "familynch@gmail.com"
 
 DOWNLOAD_FILES = [
     "config.json",
@@ -86,7 +86,7 @@ def run_script(script_name, *args):
     return result.stdout
 
 
-def send_email(subject, body):
+def send_email(subject, body, to):
     token_file = LOCAL_CONFIG / "gmail-token.json"
     creds = Credentials.from_authorized_user_file(str(token_file))
     if creds.expired and creds.refresh_token:
@@ -95,18 +95,19 @@ def send_email(subject, body):
 
     svc = build("gmail", "v1", credentials=creds, cache_discovery=False)
     msg = MIMEMultipart("alternative")
-    msg["To"]      = TO_EMAIL
+    msg["To"]      = to
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain"))
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
     svc.users().messages().send(userId="me", body={"raw": raw}).execute()
-    print(f"Email sent to {TO_EMAIL}")
+    print(f"Email sent to {to}")
 
 
 @functions_framework.http
 def sports_sync(request):
     print("=== Downloading config from GCS ===")
     sync_from_gcs()
+    to_email = json.loads((LOCAL_CONFIG / "config.json").read_text())["family"]["notify_email"]
 
     print("\n=== Running driving-plan ===")
     driving_output = run_script("driving_plan.py", "--apply")
@@ -135,5 +136,5 @@ def sports_sync(request):
     body += "\n\n=== Schedule changes ===\n"
     body += "\n".join(sync_lines) if sync_lines else "No schedule changes"
 
-    send_email("Kids calendar synced — driving plan for the week", body)
+    send_email("Kids calendar synced — driving plan for the week", body, to_email)
     return "OK", 200
