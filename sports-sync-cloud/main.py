@@ -105,36 +105,47 @@ def send_email(subject, body, to):
 
 @functions_framework.http
 def sports_sync(request):
-    print("=== Downloading config from GCS ===")
-    sync_from_gcs()
-    to_email = json.loads((LOCAL_CONFIG / "config.json").read_text())["family"]["notify_email"]
+    try:
+        print("=== Downloading config from GCS ===")
+        sync_from_gcs()
 
-    print("\n=== Running driving-plan ===")
-    driving_output = run_script("driving_plan.py", "--apply")
+        config_path = LOCAL_CONFIG / "config.json"
+        if not config_path.exists():
+            raise RuntimeError("config.json not found after GCS download — check bucket permissions and file presence")
+        to_email = json.loads(config_path.read_text())["family"]["notify_email"]
 
-    print("\n=== Running sports-cal-sync ===")
-    sports_output = run_script("sports_cal_sync.py")
+        print("\n=== Running driving-plan ===")
+        driving_output = run_script("driving_plan.py", "--apply")
 
-    print("\n=== Saving state to GCS ===")
-    sync_to_gcs()
+        print("\n=== Running sports-cal-sync ===")
+        sports_output = run_script("sports_cal_sync.py")
 
-    # Build email: extract "Texts to send" section from driving output
-    texts, in_texts = [], False
-    for line in driving_output.splitlines():
-        if "Texts to send this week:" in line:
-            in_texts = True
-        elif in_texts and line.strip():
-            texts.append(line)
+        print("\n=== Saving state to GCS ===")
+        sync_to_gcs()
 
-    sync_lines = [
-        l for l in sports_output.splitlines()
-        if any(x in l for x in ["✓ Copied", "↻ Updated", "[dry run]", "Done:", "✗"])
-    ]
+        # Build email: extract "Texts to send" section from driving output
+        texts, in_texts = [], False
+        for line in driving_output.splitlines():
+            if "Texts to send this week:" in line:
+                in_texts = True
+            elif in_texts and line.strip():
+                texts.append(line)
 
-    body  = "=== Texts to send this week ===\n"
-    body += "\n".join(texts) if texts else "None this week"
-    body += "\n\n=== Schedule changes ===\n"
-    body += "\n".join(sync_lines) if sync_lines else "No schedule changes"
+        sync_lines = [
+            l for l in sports_output.splitlines()
+            if any(x in l for x in ["✓ Copied", "↻ Updated", "[dry run]", "Done:", "✗"])
+        ]
 
-    send_email("Kids calendar synced — driving plan for the week", body, to_email)
-    return "OK", 200
+        body  = "=== Texts to send this week ===\n"
+        body += "\n".join(texts) if texts else "None this week"
+        body += "\n\n=== Schedule changes ===\n"
+        body += "\n".join(sync_lines) if sync_lines else "No schedule changes"
+
+        send_email("Kids calendar synced — driving plan for the week", body, to_email)
+        return "OK", 200
+
+    except Exception as e:
+        import traceback
+        msg = traceback.format_exc()
+        print(f"ERROR: {msg}", file=sys.stderr)
+        return f"Error: {e}\n\n{msg}", 500
