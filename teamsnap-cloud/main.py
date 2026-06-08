@@ -145,14 +145,14 @@ def teamsnap_rsvp(request):
         else:
             combined = f"<pre style='font-family:sans-serif'>{sn_output}</pre>"
 
-        # Append schedule changes if any were synced
-        sync_lines = [
+        # Append calendar changes (new/updated events and deletions) if any
+        cal_lines = [
             l for l in cal_output.splitlines()
-            if any(x in l for x in ["✓ Copied", "↻ Updated", "✗"])
+            if any(x in l for x in ["✓ Copied", "↻ Updated", "🗑", "✗"])
         ]
-        if sync_lines:
-            changes_html = "<br>".join(sync_lines)
-            combined += f"\n<hr><p><strong>📅 Schedule changes synced:</strong><br><pre style='font-family:sans-serif'>{changes_html}</pre></p>"
+        if cal_lines:
+            changes_html = "<br>".join(cal_lines)
+            combined += f"\n<hr><p><strong>📅 Calendar changes:</strong><br><pre style='font-family:sans-serif'>{changes_html}</pre></p>"
 
         send_email("Team RSVPs updated", combined, to_email)
         return "OK", 200

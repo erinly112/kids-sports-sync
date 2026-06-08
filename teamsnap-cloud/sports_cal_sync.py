@@ -549,7 +549,7 @@ def main():
 
     save_synced(synced)
 
-    if deleted and not args.dry_run:
+    if deleted and not args.dry_run and not os.environ.get("SCRIPT_CONFIG_DIR"):
         send_deletion_email(deleted)
 
     if not args.dry_run:
