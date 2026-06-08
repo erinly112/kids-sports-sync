@@ -2,10 +2,12 @@
 teamsnap-rsvp Cloud Function — runs daily at 7am ET.
 
 1. Downloads config/state from GCS (erin-lynch-scripts)
-2. Runs teamsnap-rsvp.py --apply (outputs HTML)
-3. Runs sportngin-rsvp.py --apply (outputs plain text)
-4. Uploads changed state back to GCS
-5. Emails combined summary to notify_email from config.json
+2. Runs sports_cal_sync.py  — syncs team calendars → Kid Activities
+3. Runs driving_plan.py --apply  — creates/updates 🚗 driving reminders
+4. Runs teamsnap_rsvp.py --apply  — sets TeamSnap RSVPs
+5. Runs sportngin_rsvp.py --apply  — sets SportsEngine RSVPs
+6. Uploads changed state back to GCS
+7. Emails RSVP summary (+ any schedule changes) to notify_email
 """
 
 import json
@@ -36,12 +38,20 @@ DOWNLOAD_FILES = [
     "rsvp-cal-snapshot.json",
     "season-nudge-sent.json",
     "sportngin-credentials.json",
+    "sports-sync-ids.json",
+    "drive-config.json",
+    "driving-plan-synced.json",
+    "geocode-cache.json",
+    "bays-fields.json",
 ]
 UPLOAD_FILES = [
     "calendar-token.json",
     "teamsnap-token.json",
     "rsvp-cal-snapshot.json",
     "season-nudge-sent.json",
+    "sports-sync-ids.json",
+    "driving-plan-synced.json",
+    "geocode-cache.json",
 ]
 
 
@@ -96,34 +106,59 @@ def run_script(script, *args):
 
 @functions_framework.http
 def teamsnap_rsvp(request):
-    print("=== Downloading config from GCS ===")
-    sync_from_gcs()
-    to_email = json.loads((LOCAL_CONFIG / "config.json").read_text())["family"]["notify_email"]
+    try:
+        print("=== Downloading config from GCS ===")
+        sync_from_gcs()
 
-    print("\n=== Running teamsnap-rsvp ===")
-    ts_output = run_script("teamsnap_rsvp.py", "--apply")
+        config_path = LOCAL_CONFIG / "config.json"
+        if not config_path.exists():
+            raise RuntimeError("config.json not found after GCS download — check bucket permissions")
+        to_email = json.loads(config_path.read_text())["family"]["notify_email"]
 
-    print("\n=== Running sportngin-rsvp ===")
-    sn_output = run_script("sportngin_rsvp.py", "--apply")
+        print("\n=== Running sports-cal-sync ===")
+        cal_output = run_script("sports_cal_sync.py")
 
-    print("\n=== Saving state to GCS ===")
-    sync_to_gcs()
+        print("\n=== Running driving-plan ===")
+        run_script("driving_plan.py", "--apply")
 
-    # Combine outputs — TeamSnap is HTML, SportNgin is plain text
-    has_ts = bool(ts_output.strip())
-    has_sn = bool(sn_output.strip())
+        print("\n=== Running teamsnap-rsvp ===")
+        ts_output = run_script("teamsnap_rsvp.py", "--apply")
 
-    if not has_ts and not has_sn:
-        print("No RSVP changes — skipping email")
+        print("\n=== Running sportngin-rsvp ===")
+        sn_output = run_script("sportngin_rsvp.py", "--apply")
+
+        print("\n=== Saving state to GCS ===")
+        sync_to_gcs()
+
+        # Build RSVP email body
+        has_ts = bool(ts_output.strip())
+        has_sn = bool(sn_output.strip())
+
+        if not has_ts and not has_sn:
+            print("No RSVP changes — skipping email")
+            return "OK", 200
+
+        if has_ts and has_sn:
+            combined = ts_output.rstrip() + f"\n<pre style='font-family:sans-serif;margin-top:16px'>{sn_output}</pre>"
+        elif has_ts:
+            combined = ts_output
+        else:
+            combined = f"<pre style='font-family:sans-serif'>{sn_output}</pre>"
+
+        # Append schedule changes if any were synced
+        sync_lines = [
+            l for l in cal_output.splitlines()
+            if any(x in l for x in ["✓ Copied", "↻ Updated", "✗"])
+        ]
+        if sync_lines:
+            changes_html = "<br>".join(sync_lines)
+            combined += f"\n<hr><p><strong>📅 Schedule changes synced:</strong><br><pre style='font-family:sans-serif'>{changes_html}</pre></p>"
+
+        send_email("Team RSVPs updated", combined, to_email)
         return "OK", 200
 
-    # Wrap SportNgin plain text in minimal HTML and append to TeamSnap HTML
-    if has_ts and has_sn:
-        combined = ts_output.rstrip() + f"\n<pre style='font-family:sans-serif;margin-top:16px'>{sn_output}</pre>"
-    elif has_ts:
-        combined = ts_output
-    else:
-        combined = f"<pre style='font-family:sans-serif'>{sn_output}</pre>"
-
-    send_email("Team RSVPs updated", combined, to_email)
-    return "OK", 200
+    except Exception as e:
+        import traceback
+        msg = traceback.format_exc()
+        print(f"ERROR: {msg}", file=sys.stderr)
+        return f"Error: {e}\n\n{msg}", 500
