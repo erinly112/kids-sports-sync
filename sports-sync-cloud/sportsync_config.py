@@ -1,26 +1,34 @@
 """
 Shared config loader for kids-sports-sync scripts.
-Reads config.json from the same directory as this file.
+Reads config.json from SCRIPT_CONFIG_DIR if set, otherwise from the script directory.
 """
 
 import json
+import os
 from pathlib import Path
 
 _CONFIG = None
-_CONFIG_PATH = Path(__file__).parent / "config.json"
+
+
+def _config_path() -> Path:
+    env = os.environ.get("SCRIPT_CONFIG_DIR")
+    if env:
+        return Path(env) / "config.json"
+    return Path(__file__).parent / "config.json"
 
 
 def load() -> dict:
     global _CONFIG
     if _CONFIG is not None:
         return _CONFIG
-    if not _CONFIG_PATH.exists():
+    p = _config_path()
+    if not p.exists():
         raise FileNotFoundError(
             f"\nconfig.json not found.\n"
             f"Copy config.example.json → config.json and fill in your values.\n"
-            f"Expected at: {_CONFIG_PATH}\n"
+            f"Expected at: {p}\n"
         )
-    _CONFIG = json.loads(_CONFIG_PATH.read_text())
+    _CONFIG = json.loads(p.read_text())
     return _CONFIG
 
 
