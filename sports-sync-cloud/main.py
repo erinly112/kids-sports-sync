@@ -8,21 +8,20 @@ sports-sync Cloud Function — runs every Sunday at 5pm ET.
 5. Emails summary to notify_email from config.json
 """
 
-import base64
 import json
 import os
+import smtplib
 import subprocess
 import sys
-import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
 
 import functions_framework
-from google.auth.transport.requests import Request
 from google.cloud import storage
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
+
+SMTP_HOST = "smtp.gmail.com"
+SMTP_PORT = 587
 
 BUCKET       = "erin-lynch-scripts"
 LOCAL_CONFIG = Path("/tmp/script-config")
@@ -31,7 +30,7 @@ DOWNLOAD_FILES = [
     "config.json",
     "credentials.json",
     "calendar-token.json",
-    "gmail-token.json",
+    "gmail-app-password.txt",
     "sports-sync-ids.json",
     "driving-plan-synced.json",
     "geocode-cache.json",
@@ -40,7 +39,6 @@ DOWNLOAD_FILES = [
 ]
 UPLOAD_FILES = [
     "calendar-token.json",
-    "gmail-token.json",
     "sports-sync-ids.json",
     "driving-plan-synced.json",
     "geocode-cache.json",
@@ -87,19 +85,17 @@ def run_script(script_name, *args):
 
 
 def send_email(subject, body, to):
-    token_file = LOCAL_CONFIG / "gmail-token.json"
-    creds = Credentials.from_authorized_user_file(str(token_file))
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        token_file.write_text(creds.to_json())
-
-    svc = build("gmail", "v1", credentials=creds, cache_discovery=False)
+    sender = json.loads((LOCAL_CONFIG / "config.json").read_text())["family"]["notify_email"]
+    app_password = (LOCAL_CONFIG / "gmail-app-password.txt").read_text().strip()
     msg = MIMEMultipart("alternative")
+    msg["From"]    = sender
     msg["To"]      = to
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain"))
-    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-    svc.users().messages().send(userId="me", body={"raw": raw}).execute()
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as smtp:
+        smtp.starttls()
+        smtp.login(sender, app_password)
+        smtp.sendmail(sender, to, msg.as_string())
     print(f"Email sent to {to}")
 
 
