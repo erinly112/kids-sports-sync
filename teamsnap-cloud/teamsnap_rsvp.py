@@ -595,12 +595,37 @@ def main():
                         f.write(f"{ts} | {cal_source} | {kid_name} | {ev_name} | {ev_date} | {old_label} → {new_label}\n")
 
                 changes.setdefault(cal_source, []).append(
-                    (kid_name, date_label, ev_name, going)
+                    (kid_name, date_label, ev_name, going, ev_date)
                 )
 
     maybe_send_season_nudge()
 
-    if _cfg.get("email_enabled", True):
+    if os.environ.get("SCRIPT_CONFIG_DIR"):
+        # Cloud mode: output structured JSON for main.py to combine with sportngin data
+        import json as _json
+        output = {
+            "changes": [
+                {"kid": kid, "date": ev_date, "date_label": dl, "team": src,
+                 "team_emoji": TEAM_EMOJI.get(src, "🏅"), "event": ev, "going": g}
+                for src, rows in changes.items()
+                for kid, dl, ev, g, ev_date in rows
+            ],
+            "all_rsvps": [
+                {"kid": kid, "date": ev_date, "date_label": dl, "team": src,
+                 "team_emoji": TEAM_EMOJI.get(src, "🏅"), "event": ev, "going": g}
+                for src, rows in all_rsvps.items()
+                for kid, dl, ev, g, ev_date in rows
+            ],
+            "cal_diff": cal_diff,
+            "skipped": [
+                {"kid": kid, "date_label": dl, "team": src, "event": ev}
+                for src, rows in skipped.items()
+                for kid, dl, ev in rows
+            ],
+            "is_first_run": is_first_run,
+        }
+        print(_json.dumps(output))
+    elif _cfg.get("email_enabled", True):
         print(build_html(changes, all_rsvps, cal_diff, skipped, args.apply, is_first_run, ts_dates=ts_dates_by_source))
 
     if args.apply:

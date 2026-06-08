@@ -186,9 +186,11 @@ def main():
     time_min = now.isoformat()
     time_max = (now + datetime.timedelta(days=args.days)).isoformat()
 
-    gcal         = get_gcal_service()
-    any_changes  = False
-    total_rsvps  = 0
+    gcal            = get_gcal_service()
+    any_changes     = False
+    total_rsvps     = 0
+    all_changes     = []   # [{kid, date, date_label, team, team_emoji, event, going}]
+    all_rsvps_list  = []   # same shape — full upcoming status
 
     for team_cfg in sn_teams:
         cal_source  = team_cfg["calendar_name"]
@@ -204,7 +206,7 @@ def main():
         events = get_sn_events(sn, team_id, args.days)
         print(f"SportNgin: {len(events)} upcoming events for {cal_source}", file=sys.stderr)
 
-        changes = []
+        team_changes = []
         for ev in events:
             ev_id    = ev["id"]
             title    = ev.get("title", "(no title)")
@@ -221,32 +223,51 @@ def main():
             current     = my_attendee.get("response", "") if my_attendee else ""
 
             if RESPECT_MANUAL_YES and target == "no" and current == "yes":
-                continue
-
-            if current == target:
-                continue
+                going = True  # honour manual yes
 
             try:
                 date_label = datetime.datetime.fromisoformat(start_dt.replace("Z", "+00:00")).strftime("%a %b %-d")
             except Exception:
                 date_label = ev_date
 
+            all_rsvps_list.append({
+                "kid": kid, "date": ev_date, "date_label": date_label,
+                "team": cal_source, "team_emoji": sport_emoji,
+                "event": title, "going": going,
+            })
+
+            if RESPECT_MANUAL_YES and target == "no" and current == "yes":
+                continue
+            if current == target:
+                continue
+
             if args.apply:
                 set_rsvp(sn, ev_id, persona_id, team_id, target)
 
-            changes.append((kid, date_label, title, target))
+            team_changes.append((kid, date_label, title, target, ev_date))
+            all_changes.append({
+                "kid": kid, "date": ev_date, "date_label": date_label,
+                "team": cal_source, "team_emoji": sport_emoji,
+                "event": title, "going": going,
+            })
 
-        if changes:
+        if team_changes:
             any_changes  = True
-            total_rsvps += len(changes)
-            print(f"{sport_emoji} {cal_source}")
-            for kid_name, date_label, title, response in changes:
-                status = "🟢" if response == "yes" else "🔴"
-                print(f"  {status} {kid_name} — {date_label} · {title}")
-            print()
+            total_rsvps += len(team_changes)
+            if not os.environ.get("SCRIPT_CONFIG_DIR"):
+                print(f"{sport_emoji} {cal_source}")
+                for kid_name, date_label, title, response, _ in team_changes:
+                    status = "🟢" if response == "yes" else "🔴"
+                    print(f"  {status} {kid_name} — {date_label} · {title}")
+                print()
 
-    if not any_changes:
-        print("No RSVP changes." if args.apply else "No RSVP changes needed.")
+    if not os.environ.get("SCRIPT_CONFIG_DIR"):
+        if not any_changes:
+            print("No RSVP changes." if args.apply else "No RSVP changes needed.")
+
+    if os.environ.get("SCRIPT_CONFIG_DIR"):
+        import json as _json
+        print(_json.dumps({"changes": all_changes, "all_rsvps": all_rsvps_list}))
 
     if args.apply:
         _cfg = sportsync_config.load()
