@@ -110,7 +110,7 @@ def run_script(script, *args):
     return r.stdout
 
 
-def build_email_html(changes, all_rsvps, cal_diff, skipped, deleted_lines,
+def build_email_html(changes, all_rsvps, discrepancies, cal_diff, skipped, deleted_lines,
                      kid_colors, is_first_run, last_digest_time=None):
     today     = datetime.date.today()
     today_str = today.strftime("%A, %B %-d, %Y")
@@ -195,17 +195,35 @@ def build_email_html(changes, all_rsvps, cal_diff, skipped, deleted_lines,
         for date, rows in by_date.items():
             p(date_row(rows[0]["date_label"]))
             for r in rows:
-                prev_g = r.get("prev_going")
-                override = None
-                if prev_g is True and not r["going"]:
-                    override = "⚠️ was Going in app — corrected"
-                elif prev_g is False and r["going"]:
-                    override = "(was Not going)"
-                p(event_row(r, override_note=override))
+                p(event_row(r))
         p('</table>')
     p('</div>')
 
-    # ── Section 2: Week Ahead ───────────────────────────────────────────────────
+    # ── Section 2: Discrepancies ────────────────────────────────────────────────
+    if discrepancies:
+        sorted_disc = sorted(discrepancies, key=lambda x: (x["date"], x["kid"]))
+        by_date = {}
+        for r in sorted_disc:
+            by_date.setdefault(r["date"], []).append(r)
+        p('<div style="margin-bottom:24px;background:#fff8e1;border-radius:8px;padding:14px 16px">')
+        p(section_hdr("⚠️ Check with Tom",
+                      "App RSVP differs from calendar — not auto-corrected"))
+        p('<table style="width:100%;border-collapse:collapse">')
+        for date, rows in by_date.items():
+            p(date_row(rows[0]["date_label"]))
+            for r in rows:
+                app_val = "Going" if r["app_going"] else "Not going"
+                cal_val = "Going" if r["cal_going"] else "Not going"
+                emoji   = r.get("team_emoji", "🏅")
+                p(f'<tr><td style="padding:3px 8px;font-size:13px;color:#333">'
+                  f'{emoji} {kid_badge(r["kid"])}{r["event"]}'
+                  f'<span style="font-size:12px;color:#b45309;margin-left:8px">'
+                  f'app: <strong>{app_val}</strong> · calendar says: <strong>{cal_val}</strong>'
+                  f'</span></td></tr>')
+        p('</table>')
+        p('</div>')
+
+    # ── Section 3: Week Ahead ───────────────────────────────────────────────────
     week_end  = (today + datetime.timedelta(days=7)).isoformat()
     today_iso = today.isoformat()
     week_rsvps = [r for r in all_rsvps if today_iso <= r["date"] <= week_end]
@@ -359,17 +377,18 @@ def teamsnap_rsvp(request):
         except Exception:
             sn_data = {}
 
-        all_changes  = ts_data.get("changes",  []) + sn_data.get("changes",  [])
-        all_rsvps    = ts_data.get("all_rsvps", []) + sn_data.get("all_rsvps", [])
-        cal_diff     = ts_data.get("cal_diff",  {})
-        skipped      = ts_data.get("skipped",   [])
-        is_first_run = ts_data.get("is_first_run", False)
+        all_changes      = ts_data.get("changes",       []) + sn_data.get("changes",       [])
+        all_rsvps        = ts_data.get("all_rsvps",     []) + sn_data.get("all_rsvps",     [])
+        all_discrepancies= ts_data.get("discrepancies", []) + sn_data.get("discrepancies", [])
+        cal_diff         = ts_data.get("cal_diff",      {})
+        skipped          = ts_data.get("skipped",       [])
+        is_first_run     = ts_data.get("is_first_run",  False)
 
         # Parse auto-deleted lines from cal sync output
         deleted_lines = [l for l in cal_output.splitlines() if "🗑" in l]
 
         kid_colors = {k["name"]: k["color"] for k in cfg.get("kids", [])}
-        html = build_email_html(all_changes, all_rsvps, cal_diff, skipped,
+        html = build_email_html(all_changes, all_rsvps, all_discrepancies, cal_diff, skipped,
                                 deleted_lines, kid_colors, is_first_run, last_digest_time)
 
         send_email("Team RSVPs updated", html, to_email)

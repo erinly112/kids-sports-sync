@@ -491,13 +491,15 @@ def main():
     if args.apply:
         save_snapshot(cal_by_src)
 
-    # changes:   {cal_source: [(kid_name, date_label, ev_name, going)]}
-    # all_rsvps: {cal_source: [(kid_name, date_label, ev_name, going)]}  — full picture
-    # skipped:   {cal_source: [(kid_name, date_label, ev_name)]}  — no av record found
+    # changes:       {cal_source: [(kid_name, date_label, ev_name, going, ev_date, prev_going)]}
+    # all_rsvps:     {cal_source: [(kid_name, date_label, ev_name, going, ev_date)]} — actual app state
+    # skipped:       {cal_source: [(kid_name, date_label, ev_name)]}
+    # discrepancies: {cal_source: [(kid_name, date_label, ev_name, cal_going, app_going, ev_date)]}
     changes          = {}
     all_rsvps        = {}
     skipped          = {}
-    ts_dates_by_source = {}  # cal_source → set of YYYY-MM-DD dates still on TeamSnap
+    discrepancies    = {}
+    ts_dates_by_source = {}
 
     for team_id, cal_source in TEAM_CALENDAR_MAP.items():
         members_data = ts_get(token, f"{API_BASE}/members/search?team_id={team_id}")
@@ -571,32 +573,30 @@ def main():
                     print(f"[debug]     {kid_name} / {ev_name} ({ev_date}): "
                           f"going={going}, current={current_code}, target={target_code}", file=sys.stderr)
 
-                # Respect a manual "yes" set outside this script
-                if RESPECT_MANUAL_YES and target_code == 0 and current_code == 1:
-                    all_rsvps.setdefault(cal_source, []).append(
-                        (kid_name, date_label, ev_name, True, ev_date)  # honour manual going
-                    )
-                    continue
-
-                # Always record for the full status summary
+                # Record actual app state for Week Ahead display
+                app_going = (current_code == 1) if current_code is not None else going
                 all_rsvps.setdefault(cal_source, []).append(
-                    (kid_name, date_label, ev_name, going, ev_date)
+                    (kid_name, date_label, ev_name, app_going, ev_date)
                 )
 
                 if current_code == target_code:
                     continue
 
-                if args.apply:
-                    ts_put(token, av["_href"], {"status_code": target_code})
-                    old_label = "going" if current_code == 1 else "not going"
-                    new_label = "going" if target_code  == 1 else "not going"
-                    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    with RSVP_LOG_FILE.open("a") as f:
-                        f.write(f"{ts} | {cal_source} | {kid_name} | {ev_name} | {ev_date} | {old_label} → {new_label}\n")
-
-                changes.setdefault(cal_source, []).append(
-                    (kid_name, date_label, ev_name, going, ev_date, current_code == 1)
-                )
+                if current_code is None:
+                    # Never set — auto-set from calendar
+                    if args.apply:
+                        ts_put(token, av["_href"], {"status_code": target_code})
+                        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        with RSVP_LOG_FILE.open("a") as f:
+                            f.write(f"{ts} | {cal_source} | {kid_name} | {ev_name} | {ev_date} | (unset) → {'going' if target_code == 1 else 'not going'}\n")
+                    changes.setdefault(cal_source, []).append(
+                        (kid_name, date_label, ev_name, going, ev_date, False)
+                    )
+                else:
+                    # App has a value that differs from calendar — flag, don't override
+                    discrepancies.setdefault(cal_source, []).append(
+                        (kid_name, date_label, ev_name, going, current_code == 1, ev_date)
+                    )
 
     maybe_send_season_nudge()
 
@@ -616,6 +616,13 @@ def main():
                  "team_emoji": TEAM_EMOJI.get(src, "🏅"), "event": ev, "going": g}
                 for src, rows in all_rsvps.items()
                 for kid, dl, ev, g, ev_date in rows
+            ],
+            "discrepancies": [
+                {"kid": kid, "date": ev_date, "date_label": dl, "team": src,
+                 "team_emoji": TEAM_EMOJI.get(src, "🏅"), "event": ev,
+                 "cal_going": cal_g, "app_going": app_g}
+                for src, rows in discrepancies.items()
+                for kid, dl, ev, cal_g, app_g, ev_date in rows
             ],
             "cal_diff": cal_diff,
             "skipped": [
