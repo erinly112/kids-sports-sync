@@ -315,8 +315,10 @@ def fmt_date(d):
         return d
 
 def build_html(changes, all_rsvps, cal_diff, skipped, applied, is_first_run=False, ts_dates=None):
-    today = datetime.date.today().strftime("%A, %B %-d, %Y")
-    dry   = "" if applied else " &nbsp;<span style='color:#aaa;font-size:12px;font-weight:400'>(dry run)</span>"
+    today       = datetime.date.today()
+    today_str   = today.strftime("%A, %B %-d, %Y")
+    today_short = today.strftime("%b %-d")
+    dry         = ' <span style="color:#aaa;font-size:13px;font-weight:400">(dry run)</span>' if not applied else ""
 
     parts = []
     p = parts.append
@@ -325,149 +327,131 @@ def build_html(changes, all_rsvps, cal_diff, skipped, applied, is_first_run=Fals
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 </head>
-<body style="margin:0;padding:20px;background:#f0f2f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif">
-<div style="max-width:580px;margin:0 auto">
-
-<!-- Header -->
-<div style="background:#16213e;border-radius:12px 12px 0 0;padding:20px 24px">
-  <div style="color:#fff;font-size:19px;font-weight:700">TeamSnap RSVP Sync{dry}</div>
-  <div style="color:#8899bb;font-size:13px;margin-top:3px">{today}</div>
-</div>
-<div style="background:#fff;border-radius:0 0 12px 12px;padding:24px;box-shadow:0 2px 12px rgba(0,0,0,.08)">
+<body style="margin:0;padding:20px;background:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif">
+<div style="max-width:580px;margin:0 auto;background:#fff;border-radius:12px;padding:28px 32px;box-shadow:0 2px 8px rgba(0,0,0,.07)">
 """)
 
-    # ── First-run banner ────────────────────────────────────────────────────
+    # ── Header ──────────────────────────────────────────────────────────────────
+    p(f'<div style="margin-bottom:24px">'
+      f'<span style="color:#e67e22;font-size:22px;font-weight:800">Sports RSVP</span>'
+      f'<span style="color:#16213e;font-size:22px;font-weight:400"> — {today_str}</span>{dry}'
+      f'</div>')
+
     if is_first_run:
         p('<div style="background:#e8f4fd;border-left:4px solid #2196f3;border-radius:4px;padding:12px 16px;margin-bottom:24px;font-size:13px;color:#0d47a1">'
-          '👋 <strong>First run!</strong> This email looks busier than usual because there\'s no previous snapshot to compare against. '
-          'Future daily emails will only show what actually changed.'
+          '👋 <strong>First run!</strong> Future daily emails will only show what actually changed.'
           '</div>')
 
-    # ── Section 1: RSVP Changes ──────────────────────────────────────────────
+    # ── Section 1: RSVP Changes (grouped by date) ───────────────────────────────
     p('<div style="margin-bottom:28px">')
-    p('<div style="font-size:15px;font-weight:700;color:#16213e;margin-bottom:12px">⚡ RSVP Changes</div>')
+    p('<div style="font-size:15px;font-weight:700;color:#16213e;margin-bottom:2px">⚡ RSVP Changes</div>')
+    p('<div style="font-size:12px;color:#aaa;margin-bottom:12px">since last digest</div>')
 
-    if not changes:
+    # Flatten and sort by date
+    changes_flat = []
+    for cal_source, rows in changes.items():
+        emoji = TEAM_EMOJI.get(cal_source, "🏅")
+        for tup in rows:
+            kid_name, date_label, ev_name, going = tup[0], tup[1], tup[2], tup[3]
+            ev_date = tup[4] if len(tup) > 4 else "9999-99-99"
+            changes_flat.append((ev_date, date_label, emoji, kid_name, ev_name, going))
+    changes_flat.sort(key=lambda x: x[0])
+
+    if not changes_flat:
         p('<div style="color:#888;font-size:14px">No RSVP changes this run.</div>')
     else:
-        p('<table style="width:100%;border-collapse:collapse">')
-        for cal_source, rows in sorted(changes.items()):
-            emoji = TEAM_EMOJI.get(cal_source, "🏅")
-            p(f'<tr><td colspan="3" style="padding:10px 0 5px;font-size:13px;font-weight:600;color:#555;border-top:1px solid #eee">{emoji} {cal_source}</td></tr>')
-            for kid_name, date_label, ev_name, going in rows:
-                badge_bg  = "#e8f5e9" if going else "#fdecea"
-                badge_fg  = "#2e7d32" if going else "#c62828"
-                badge_txt = "✓ Going" if going else "✗ Not going"
-                kid_color = KID_COLOR.get(kid_name, "#555")
-                p(f"""<tr>
-  <td style="padding:5px 0;font-size:13px;color:#888;width:84px;white-space:nowrap">{date_label}</td>
-  <td style="padding:5px 8px;font-size:13px;color:#333">
-    <span style="display:inline-block;background:{kid_color};color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:600;margin-right:5px">{kid_name}</span>{ev_name}
-  </td>
-  <td style="padding:5px 0;text-align:right;white-space:nowrap">
-    <span style="background:{badge_bg};color:{badge_fg};border-radius:10px;padding:2px 9px;font-size:12px;font-weight:600">{badge_txt}</span>
-  </td>
-</tr>""")
-        p('</table>')
+        cur_date = None
+        for ev_date, date_label, emoji, kid_name, ev_name, going in changes_flat:
+            if date_label != cur_date:
+                p(f'<div style="font-size:13px;font-weight:700;color:#333;margin:{"0" if cur_date is None else "10px"} 0 4px">{date_label}</div>')
+                cur_date = date_label
+            kid_color = KID_COLOR.get(kid_name, "#555")
+            badge_bg  = "#e8f5e9" if going else "#f5f5f5"
+            badge_fg  = "#2e7d32" if going else "#999"
+            badge_txt = "✓ Going" if going else "– Not going"
+            p(f'<div style="display:flex;align-items:center;padding:4px 0;font-size:13px">'
+              f'<span style="width:22px">{emoji}</span>'
+              f'<span style="display:inline-block;background:{kid_color};color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:600;margin-right:6px">{kid_name}</span>'
+              f'<span style="flex:1;color:#333">{ev_name}</span>'
+              f'<span style="background:{badge_bg};color:{badge_fg};border-radius:10px;padding:2px 9px;font-size:12px;font-weight:600;white-space:nowrap">{badge_txt}</span>'
+              f'</div>')
     p('</div>')
 
-    # ── Section 2: Current RSVP Status ──────────────────────────────────────
+    # ── Section 2: Week Ahead (grouped by date) ──────────────────────────────────
     p('<div style="margin-bottom:28px">')
-    p('<div style="font-size:15px;font-weight:700;color:#16213e;margin-bottom:12px">📋 Current RSVP Status</div>')
+    p('<div style="font-size:15px;font-weight:700;color:#16213e;margin-bottom:12px">📋 Week Ahead</div>')
 
-    week_cutoff = (datetime.date.today() + datetime.timedelta(days=7)).strftime("%Y-%m-%d")
-    all_rsvps_week = {
-        src: [r for r in rows if (r[4] if len(r) > 4 else "9999") <= week_cutoff]
-        for src, rows in all_rsvps.items()
+    week_cutoff = (today + datetime.timedelta(days=7)).strftime("%Y-%m-%d")
+
+    # Build changes lookup: (cal_source, kid_name, ev_name) → going
+    changes_lookup = {
+        (cal_source, tup[0], tup[2]): tup[3]
+        for cal_source, rows in changes.items()
+        for tup in rows
     }
-    all_rsvps_week = {src: rows for src, rows in all_rsvps_week.items() if rows}
 
-    if not all_rsvps_week:
+    # Flatten all events within the week window
+    events_flat = []
+    for cal_source, rows in all_rsvps.items():
+        emoji = TEAM_EMOJI.get(cal_source, "🏅")
+        for tup in rows:
+            kid_name, date_label, ev_name, going = tup[0], tup[1], tup[2], tup[3]
+            ev_date = tup[4] if len(tup) > 4 else "9999-99-99"
+            if ev_date > week_cutoff:
+                continue
+            key     = (cal_source, kid_name, ev_name)
+            changed = key in changes_lookup
+            if changed:
+                going = changes_lookup[key]
+            events_flat.append((ev_date, date_label, emoji, kid_name, ev_name, going, changed))
+
+    events_flat.sort(key=lambda x: (x[0], x[3], x[4]))
+
+    if not events_flat:
         p('<div style="color:#888;font-size:14px">No upcoming events in the next 7 days.</div>')
     else:
-        p('<table style="width:100%;border-collapse:collapse">')
-        for cal_source, rows in sorted(all_rsvps_week.items()):
-            emoji = TEAM_EMOJI.get(cal_source, "🏅")
-            p(f'<tr><td colspan="3" style="padding:10px 0 5px;font-size:13px;font-weight:600;color:#555;border-top:1px solid #eee">{emoji} {cal_source}</td></tr>')
-            for kid_name, date_label, ev_name, going, *_ in rows:
-                kid_color = KID_COLOR.get(kid_name, "#555")
-                change_entry = next(
-                    (r for r in changes.get(cal_source, []) if r[0] == kid_name and r[2] == ev_name),
-                    None,
-                )
-                changed = change_entry is not None
-                # Use the post-run status from changes when available so both sections agree
-                if changed:
-                    going = change_entry[3]
-                badge_bg  = "#e8f5e9" if going else "#f5f5f5"
-                badge_fg  = "#2e7d32" if going else "#999"
-                badge_txt = "✓ Going" if going else "– Not going"
-                dot = ' <span style="font-size:9px;color:#e67e22;vertical-align:middle">●</span>' if changed else ""
-                p(f"""<tr>
-  <td style="padding:4px 0;font-size:13px;color:#888;width:84px;white-space:nowrap">{date_label}</td>
-  <td style="padding:4px 8px;font-size:13px;color:#333">
-    <span style="display:inline-block;background:{kid_color};color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:600;margin-right:5px">{kid_name}</span>{ev_name}{dot}
-  </td>
-  <td style="padding:4px 0;text-align:right;white-space:nowrap">
-    <span style="background:{badge_bg};color:{badge_fg};border-radius:10px;padding:2px 9px;font-size:12px;font-weight:600">{badge_txt}</span>
-  </td>
-</tr>""")
-        p('</table>')
-        p('<div style="color:#aaa;font-size:11px;margin-top:8px">● = changed this run</div>')
+        cur_date = None
+        for ev_date, date_label, emoji, kid_name, ev_name, going, changed in events_flat:
+            if date_label != cur_date:
+                p(f'<div style="font-size:13px;font-weight:700;color:#333;margin:{"0" if cur_date is None else "10px"} 0 4px">{date_label}</div>')
+                cur_date = date_label
+            kid_color   = KID_COLOR.get(kid_name, "#555")
+            badge_bg    = "#e8f5e9" if going else "#f5f5f5"
+            badge_fg    = "#2e7d32" if going else "#999"
+            badge_txt   = "✓ Going" if going else "– Not going"
+            updated_tag = (f' <span style="color:#e67e22;font-size:11px">updated {today_short}</span>'
+                           if changed else "")
+            p(f'<div style="display:flex;align-items:center;padding:4px 0;font-size:13px">'
+              f'<span style="width:22px">{emoji}</span>'
+              f'<span style="display:inline-block;background:{kid_color};color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:600;margin-right:6px">{kid_name}</span>'
+              f'<span style="flex:1;color:#333">{ev_name}{updated_tag}</span>'
+              f'<span style="background:{badge_bg};color:{badge_fg};border-radius:10px;padding:2px 9px;font-size:12px;font-weight:600;white-space:nowrap">{badge_txt}</span>'
+              f'</div>')
     p('</div>')
 
-    # ── Section 3: Calendar changes ──────────────────────────────────────────
-    p('<div>')
-    p('<div style="font-size:15px;font-weight:700;color:#16213e;margin-bottom:12px">🗓 Kids Calendar Updates</div>')
-
-    if not cal_diff:
-        p('<div style="color:#888;font-size:14px">No calendar changes since last run.</div>')
-    else:
-        p('<table style="width:100%;border-collapse:collapse">')
-        for cal_source, diff in sorted(cal_diff.items()):
-            emoji = TEAM_EMOJI.get(cal_source, "🏅")
-            p(f'<tr><td colspan="2" style="padding:10px 0 5px;font-size:13px;font-weight:600;color:#555;border-top:1px solid #eee">{emoji} {cal_source}</td></tr>')
-            for d in diff.get("added", []):
-                p(f'<tr><td style="padding:4px 0;width:24px;font-size:14px">➕</td><td style="padding:4px 8px;font-size:13px;color:#2e7d32">{fmt_date(d)} added to calendar</td></tr>')
-            for d in diff.get("removed", []):
-                if ts_dates and cal_source in ts_dates:
-                    if d in ts_dates[cal_source]:
-                        reason = ' <span style="color:#888;font-size:11px">(you removed manually)</span>'
-                    else:
-                        reason = ' <span style="color:#888;font-size:11px">(team cancelled/removed)</span>'
-                else:
-                    reason = ""
-                p(f'<tr><td style="padding:4px 0;width:24px;font-size:14px">➖</td><td style="padding:4px 8px;font-size:13px;color:#c62828">{fmt_date(d)} removed from calendar{reason}</td></tr>')
-        p('</table>')
-    p('</div>')
-
-    # ── Section 4: Skipped (no availability record) ──────────────────────────
+    # ── Section 3: Skipped (no availability record) ──────────────────────────────
     if skipped:
-        p('<div style="margin-top:28px">')
-        p('<div style="font-size:15px;font-weight:700;color:#b45309;margin-bottom:12px">⚠️ Skipped — No Availability Record</div>')
-        p('<div style="color:#888;font-size:13px;margin-bottom:8px">TeamSnap returned no availability record for these events. RSVPs could not be set.</div>')
-        p('<table style="width:100%;border-collapse:collapse">')
+        p('<div style="margin-bottom:28px">')
+        p('<div style="font-size:15px;font-weight:700;color:#b45309;margin-bottom:8px">⚠️ Skipped — No Availability Record</div>')
+        p('<div style="color:#888;font-size:13px;margin-bottom:8px">TeamSnap returned no availability record for these events.</div>')
         for cal_source, rows in sorted(skipped.items()):
             emoji = TEAM_EMOJI.get(cal_source, "🏅")
-            p(f'<tr><td colspan="3" style="padding:10px 0 5px;font-size:13px;font-weight:600;color:#555;border-top:1px solid #eee">{emoji} {cal_source}</td></tr>')
             for kid_name, date_label, ev_name in rows:
                 kid_color = KID_COLOR.get(kid_name, "#555")
-                p(f"""<tr>
-  <td style="padding:5px 0;font-size:13px;color:#888;width:84px;white-space:nowrap">{date_label}</td>
-  <td style="padding:5px 8px;font-size:13px;color:#333">
-    <span style="display:inline-block;background:{kid_color};color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:600;margin-right:5px">{kid_name}</span>{ev_name}
-  </td>
-</tr>""")
-        p('</table>')
+                p(f'<div style="display:flex;align-items:center;padding:4px 0;font-size:13px">'
+                  f'<span style="width:22px">{emoji}</span>'
+                  f'<span style="display:inline-block;background:{kid_color};color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:600;margin-right:6px">{kid_name}</span>'
+                  f'<span style="color:#888">{date_label} — {ev_name}</span>'
+                  f'</div>')
         p('</div>')
 
-    # ── Footer: opt-out ─────────────────────────────────────────────────────────
-    p('<div style="margin-top:28px;padding-top:14px;border-top:1px solid #eee;text-align:center;font-size:11px;color:#bbb">'
-      'To stop these emails, open Claude Code in your kids-sports-sync folder and say: '
-      '<em>turn off the daily email</em> — or set <code style="font-size:11px">"email_enabled": false</code> in config.json'
+    # ── Footer ──────────────────────────────────────────────────────────────────
+    p('<div style="margin-top:16px;padding-top:14px;border-top:1px solid #eee;text-align:center;font-size:11px;color:#bbb">'
+      '⏳ <strong>Sports RSVP</strong> by Rosie &nbsp;·&nbsp; '
+      'to stop these emails set <code style="font-size:11px">"email_enabled": false</code> in config.json'
       '</div>')
 
-    p('\n</div>\n</div>\n</body></html>')
+    p('\n</div>\n</body></html>')
     return "\n".join(parts)
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -599,7 +583,7 @@ def main():
                         f.write(f"{ts} | {cal_source} | {kid_name} | {ev_name} | {ev_date} | {old_label} → {new_label}\n")
 
                 changes.setdefault(cal_source, []).append(
-                    (kid_name, date_label, ev_name, going)
+                    (kid_name, date_label, ev_name, going, ev_date)
                 )
 
     maybe_send_season_nudge()
