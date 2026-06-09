@@ -249,6 +249,7 @@ def main():
                 "kid": kid, "date": ev_date, "date_label": date_label,
                 "team": cal_source, "team_emoji": sport_emoji,
                 "event": title, "going": going,
+                "prev_going": current == "yes",
             })
 
         if team_changes:

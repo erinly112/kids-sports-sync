@@ -595,7 +595,7 @@ def main():
                         f.write(f"{ts} | {cal_source} | {kid_name} | {ev_name} | {ev_date} | {old_label} → {new_label}\n")
 
                 changes.setdefault(cal_source, []).append(
-                    (kid_name, date_label, ev_name, going, ev_date)
+                    (kid_name, date_label, ev_name, going, ev_date, current_code == 1)
                 )
 
     maybe_send_season_nudge()
@@ -606,9 +606,10 @@ def main():
         output = {
             "changes": [
                 {"kid": kid, "date": ev_date, "date_label": dl, "team": src,
-                 "team_emoji": TEAM_EMOJI.get(src, "🏅"), "event": ev, "going": g}
+                 "team_emoji": TEAM_EMOJI.get(src, "🏅"), "event": ev, "going": g,
+                 "prev_going": prev_g}
                 for src, rows in changes.items()
-                for kid, dl, ev, g, ev_date in rows
+                for kid, dl, ev, g, ev_date, prev_g in rows
             ],
             "all_rsvps": [
                 {"kid": kid, "date": ev_date, "date_label": dl, "team": src,
