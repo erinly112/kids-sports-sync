@@ -3,26 +3,11 @@ name: Deploy Cloud Functions
 on:
   push:
     branches: [main]
-    paths:
-      - 'teamsnap-cloud/**'
-      - 'teamsnap-rsvp.py'
-      - 'sportngin-rsvp.py'
-      - 'sportsync_config.py'
-      - 'telemetry.py'
-      - 'sports-sync-cloud/**'
-      - 'sports-cal-sync.py'
-      - 'drive-to-games.py'
 
 jobs:
   deploy-teamsnap-rsvp:
     name: Deploy teamsnap-rsvp
     runs-on: ubuntu-latest
-    if: |
-      contains(github.event.commits[0].modified, 'teamsnap-cloud/') ||
-      contains(github.event.commits[0].modified, 'teamsnap-rsvp.py') ||
-      contains(github.event.commits[0].modified, 'sportngin-rsvp.py') ||
-      contains(github.event.commits[0].modified, 'sportsync_config.py') ||
-      contains(github.event.commits[0].modified, 'telemetry.py')
     steps:
       - uses: actions/checkout@v4
 
@@ -57,12 +42,6 @@ jobs:
   deploy-sports-sync:
     name: Deploy sports-sync
     runs-on: ubuntu-latest
-    if: |
-      contains(github.event.commits[0].modified, 'sports-sync-cloud/') ||
-      contains(github.event.commits[0].modified, 'sports-cal-sync.py') ||
-      contains(github.event.commits[0].modified, 'drive-to-games.py') ||
-      contains(github.event.commits[0].modified, 'sportsync_config.py') ||
-      contains(github.event.commits[0].modified, 'telemetry.py')
     steps:
       - uses: actions/checkout@v4
 
