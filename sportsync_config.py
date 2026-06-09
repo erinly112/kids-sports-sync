@@ -4,10 +4,12 @@ Reads config.json from the same directory as this file.
 """
 
 import json
+import os
 from pathlib import Path
 
 _CONFIG = None
-_CONFIG_PATH = Path(__file__).parent / "config.json"
+_config_dir = os.environ.get("SCRIPT_CONFIG_DIR")
+_CONFIG_PATH = (Path(_config_dir) if _config_dir else Path(__file__).parent) / "config.json"
 
 
 def load() -> dict:
