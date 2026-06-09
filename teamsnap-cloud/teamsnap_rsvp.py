@@ -390,14 +390,18 @@ def build_html(changes, all_rsvps, cal_diff, skipped, applied, is_first_run=Fals
             emoji = TEAM_EMOJI.get(cal_source, "🏅")
             p(f'<tr><td colspan="3" style="padding:10px 0 5px;font-size:13px;font-weight:600;color:#555;border-top:1px solid #eee">{emoji} {cal_source}</td></tr>')
             for kid_name, date_label, ev_name, going, *_ in rows:
+                kid_color = KID_COLOR.get(kid_name, "#555")
+                change_entry = next(
+                    (r for r in changes.get(cal_source, []) if r[0] == kid_name and r[2] == ev_name),
+                    None,
+                )
+                changed = change_entry is not None
+                # Use the post-run status from changes when available so both sections agree
+                if changed:
+                    going = change_entry[3]
                 badge_bg  = "#e8f5e9" if going else "#f5f5f5"
                 badge_fg  = "#2e7d32" if going else "#999"
                 badge_txt = "✓ Going" if going else "– Not going"
-                kid_color = KID_COLOR.get(kid_name, "#555")
-                changed   = any(
-                    kid_name == r[0] and ev_name == r[2]
-                    for r in changes.get(cal_source, [])
-                )
                 dot = ' <span style="font-size:9px;color:#e67e22;vertical-align:middle">●</span>' if changed else ""
                 p(f"""<tr>
   <td style="padding:4px 0;font-size:13px;color:#888;width:84px;white-space:nowrap">{date_label}</td>
