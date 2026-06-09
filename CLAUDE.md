@@ -37,15 +37,28 @@ Walk them through these steps in order. Be conversational and patient — they m
 - **TeamSnap "no members found"** — the team ID is wrong, or the OAuth token is for a different TeamSnap account than the one that's on the team
 - **SportNgin login fails** — password may have special characters; try resetting it to something simpler temporarily
 
-## Automation (once everything works)
+## How automation is deployed (Erin's setup — do not change without checking)
 
-Mac (launchd): create a `.plist` in `~/Library/LaunchAgents/`. Ask the user what time they want the daily emails and help them write the plist.
+All scheduling runs in **Google Cloud**, not on Erin's Mac. The Mac launchd jobs have been disabled.
 
-Suggested schedule:
-- `sports-cal-sync.py` — weekly, e.g. Fridays at 5pm
-- `teamsnap-rsvp.py --apply` — daily at 7am
-- `sportngin-rsvp.py --apply` — daily at 7am
-- `drive-to-games.py` — weekly, same time as cal sync
+- **Google Cloud project:** `claude-code-scripts-calendar`
+- **Region:** `us-east1`
+- **Two Cloud Functions:**
+  - `teamsnap-rsvp` — runs daily at 7am ET (12:00 UTC). Syncs team calendars first, then sets RSVPs, then emails digest to familynch@gmail.com.
+  - `sports-sync` — runs weekly (kept as fallback, but daily sync now happens inside teamsnap-rsvp).
+- **Credentials/tokens** are stored in GCS bucket `erin-lynch-scripts` under `config/`. Never stored in the repo.
+- **Scheduler:** `gcloud scheduler jobs list --project=claude-code-scripts-calendar --location=us-east1`
+
+## Deploying changes
+
+**This is automatic.** Any push to `main` triggers `.github/workflows/deploy.yml`, which redeploys both Cloud Functions via GitHub Actions.
+
+- To deploy: merge your changes to `main` and push. GitHub Actions handles the rest.
+- To check deploy status: https://github.com/erinly112/kids-sports-sync/actions
+- The GitHub Actions service account is `github-actions-deploy@claude-code-scripts-calendar.iam.gserviceaccount.com`
+- The GCP_SA_KEY secret is stored in GitHub repo secrets — do not regenerate it unless rotating credentials.
+
+**Never manually run `gcloud functions deploy` unless GitHub Actions is broken.**
 
 ## Key files
 
@@ -56,3 +69,9 @@ Suggested schedule:
 | `sportsync_config.py` | Shared config loader (don't edit) |
 | `setup.py` | Interactive setup wizard |
 | `requirements.txt` | Python dependencies |
+| `teamsnap-cloud/` | Cloud Function source for daily RSVP job |
+| `sports-sync-cloud/` | Cloud Function source for calendar sync job |
+| `teamsnap-rsvp-run.sh` | Legacy Mac wrapper (kept for reference, not scheduled) |
+| `sports-cal-sync-run.sh` | Legacy Mac wrapper (kept for reference, not scheduled) |
+| `launchd/` | Mac plist for teamsnap-rsvp job (kept for reference, not loaded) |
+| `.github/workflows/deploy.yml` | GitHub Actions auto-deploy workflow |
