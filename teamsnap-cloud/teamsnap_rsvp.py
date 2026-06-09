@@ -491,14 +491,12 @@ def main():
     if args.apply:
         save_snapshot(cal_by_src)
 
-    # changes:       {cal_source: [(kid_name, date_label, ev_name, going, ev_date, prev_going)]}
-    # all_rsvps:     {cal_source: [(kid_name, date_label, ev_name, going, ev_date)]} — actual app state
-    # skipped:       {cal_source: [(kid_name, date_label, ev_name)]}
-    # discrepancies: {cal_source: [(kid_name, date_label, ev_name, cal_going, app_going, ev_date)]}
+    # changes:   {cal_source: [(kid_name, date_label, ev_name, going, ev_date, prev_going)]}
+    # all_rsvps: {cal_source: [(kid_name, date_label, ev_name, going, ev_date)]} — actual app state
+    # skipped:   {cal_source: [(kid_name, date_label, ev_name)]}
     changes          = {}
     all_rsvps        = {}
     skipped          = {}
-    discrepancies    = {}
     ts_dates_by_source = {}
 
     for team_id, cal_source in TEAM_CALENDAR_MAP.items():
@@ -582,21 +580,16 @@ def main():
                 if current_code == target_code:
                     continue
 
-                if current_code is None:
-                    # Never set — auto-set from calendar
-                    if args.apply:
-                        ts_put(token, av["_href"], {"status_code": target_code})
-                        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        with RSVP_LOG_FILE.open("a") as f:
-                            f.write(f"{ts} | {cal_source} | {kid_name} | {ev_name} | {ev_date} | (unset) → {'going' if target_code == 1 else 'not going'}\n")
-                    changes.setdefault(cal_source, []).append(
-                        (kid_name, date_label, ev_name, going, ev_date, False)
-                    )
-                else:
-                    # App has a value that differs from calendar — flag, don't override
-                    discrepancies.setdefault(cal_source, []).append(
-                        (kid_name, date_label, ev_name, going, current_code == 1, ev_date)
-                    )
+                prev_going = current_code == 1
+                if args.apply:
+                    ts_put(token, av["_href"], {"status_code": target_code})
+                    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    prev_label = "(unset)" if current_code is None else ("going" if prev_going else "not going")
+                    with RSVP_LOG_FILE.open("a") as f:
+                        f.write(f"{ts} | {cal_source} | {kid_name} | {ev_name} | {ev_date} | {prev_label} → {'going' if target_code == 1 else 'not going'}\n")
+                changes.setdefault(cal_source, []).append(
+                    (kid_name, date_label, ev_name, going, ev_date, prev_going)
+                )
 
     maybe_send_season_nudge()
 
@@ -616,13 +609,6 @@ def main():
                  "team_emoji": TEAM_EMOJI.get(src, "🏅"), "event": ev, "going": g}
                 for src, rows in all_rsvps.items()
                 for kid, dl, ev, g, ev_date in rows
-            ],
-            "discrepancies": [
-                {"kid": kid, "date": ev_date, "date_label": dl, "team": src,
-                 "team_emoji": TEAM_EMOJI.get(src, "🏅"), "event": ev,
-                 "cal_going": cal_g, "app_going": app_g}
-                for src, rows in discrepancies.items()
-                for kid, dl, ev, cal_g, app_g, ev_date in rows
             ],
             "cal_diff": cal_diff,
             "skipped": [

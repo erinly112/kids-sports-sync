@@ -191,7 +191,6 @@ def main():
     total_rsvps     = 0
     all_changes       = []
     all_rsvps_list    = []
-    all_discrepancies = []
 
     for team_cfg in sn_teams:
         cal_source  = team_cfg["calendar_name"]
@@ -239,23 +238,15 @@ def main():
             if current == target:
                 continue
 
-            if not current:
-                # Never set — auto-set from calendar
-                if args.apply:
-                    set_rsvp(sn, ev_id, persona_id, team_id, target)
-                team_changes.append((kid, date_label, title, target, ev_date))
-                all_changes.append({
-                    "kid": kid, "date": ev_date, "date_label": date_label,
-                    "team": cal_source, "team_emoji": sport_emoji,
-                    "event": title, "going": going, "prev_going": False,
-                })
-            else:
-                # App has a value that differs from calendar — flag, don't override
-                all_discrepancies.append({
-                    "kid": kid, "date": ev_date, "date_label": date_label,
-                    "team": cal_source, "team_emoji": sport_emoji,
-                    "event": title, "cal_going": going, "app_going": current == "yes",
-                })
+            prev_going = current == "yes"
+            if args.apply:
+                set_rsvp(sn, ev_id, persona_id, team_id, target)
+            team_changes.append((kid, date_label, title, target, ev_date))
+            all_changes.append({
+                "kid": kid, "date": ev_date, "date_label": date_label,
+                "team": cal_source, "team_emoji": sport_emoji,
+                "event": title, "going": going, "prev_going": prev_going,
+            })
 
         if team_changes:
             any_changes  = True
@@ -273,8 +264,7 @@ def main():
 
     if os.environ.get("SCRIPT_CONFIG_DIR"):
         import json as _json
-        print(_json.dumps({"changes": all_changes, "all_rsvps": all_rsvps_list,
-                           "discrepancies": all_discrepancies}))
+        print(_json.dumps({"changes": all_changes, "all_rsvps": all_rsvps_list}))
 
     if args.apply:
         _cfg = sportsync_config.load()
